@@ -1,0 +1,36 @@
+{
+  "name": "WEX-Article-Network",
+  "preferGlobal": "false",
+  "version": "0.0.1",
+  "author": "Various Artists",
+  "description": "Tools to parse the Freebase Wikipedia Extraction (WEX) data dump and build a network of first-paragraph links.",
+  "contributors": [ 
+    {
+      "name": "Brian Shaler",
+      "email": "brianshaler@gmail.com"
+    },
+    {
+      "name": "Nick Niemeir"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brianshaler/WEX-Article-Network.git"
+  },
+  "keywords": [
+    "wikipedia",
+    "freebase",
+    "wex",
+    "network",
+    "parse"
+  ],
+  "dependencies" : {
+    "optimist" : "*",
+    "cluster"  : "*",
+    "pg"       : "0.8.6"
+  },
+  "license": "MIT",
+  "engine": {
+    "node": ">=0.8"
+  }
+}
