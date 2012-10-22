@@ -7,13 +7,15 @@
 
 
 (function() {
-  var args, cluster, db, dispatch_message, fs, get_connection_string, master_request, max_offset, max_threads, next_row, next_worker, offset, pg, setup, start, threads, worker_response, workers, workers_by_pid, wrap_up;
+  var args, cluster, db, dispatch_message, etree, fs, get_connection_string, master_request, max_offset, max_threads, next_row, next_worker, offset, pg, setup, start, threads, worker_response, workers, workers_by_pid, wrap_up;
 
   fs = require("fs");
 
   cluster = require("cluster");
 
   pg = require("pg");
+
+  etree = require("elementtree");
 
   max_threads = require("os").cpus().length;
 
@@ -51,7 +53,8 @@
     db.connect();
     if (cluster.isMaster) {
       console.log("Connecting to " + connection_string);
-      return db.query("CREATE TABLE IF NOT EXISTS links (source integer, target integer)", function(err, result) {
+      db.query("DROP TABLE IF EXISTS links");
+      db.query("CREATE TABLE IF NOT EXISTS links (source integer, target integer)", function(err, result) {
         var i, worker, _i;
         for (i = _i = 0; 0 <= threads ? _i <= threads : _i >= threads; i = 0 <= threads ? ++_i : --_i) {
           worker = cluster.fork();
@@ -64,6 +67,7 @@
         });
         return start();
       });
+      return db.query("ALTER TABLE links ADD CONSTRAINT source_target UNIQUE (source, target)");
     } else if (cluster.isWorker) {
       return process.on("message", master_request);
     }
@@ -85,7 +89,7 @@
 
   offset = 0;
 
-  max_offset = 20;
+  max_offset = 1000;
 
   next_row = function(last_pid) {
     if (offset < max_offset) {
@@ -125,29 +129,75 @@
 
   master_request = function(msg) {
     var _this = this;
-    return db.query("SELECT wpid FROM articles LIMIT 1 OFFSET $1", [msg], function(err, result) {
-      var target, targets, wpid, _fn, _i, _len;
-      wpid = result.rows[0].wpid;
-      targets = [0, 1];
-      _fn = function(target) {
-        return db.query({
-          text: "INSERT INTO links (source, target) values($1, $2)",
-          values: [wpid, target]
-        }, function(err, result) {
-          return console.log("Child process " + process.pid + " inserted link: " + wpid + " => " + target);
-        });
+    return db.query("SELECT wpid, name, xml FROM articles LIMIT 1 OFFSET $1", [msg], function(err, result) {
+      var data, like_string, row, t, target_articles, targets, wpid, xml, _fn, _i, _len;
+      row = result.rows[0];
+      wpid = row.wpid;
+      xml = row.xml;
+      data = etree.parse(xml);
+      targets = data.findall("*/paragraph")[0].findall("sentence//target");
+      if (targets.length === 0) {
+        if (data.findall("*/paragraph")[1]) {
+          targets = data.findall("*/paragraph")[1].findall("sentence//target");
+        } else {
+          targets = data.findall("*/paragraph//target");
+        }
+      }
+      target_articles = [];
+      _fn = function(t) {
+        return target_articles.push("name LIKE '" + t.text.replace(/'/g, "%") + "'");
       };
       for (_i = 0, _len = targets.length; _i < _len; _i++) {
-        target = targets[_i];
-        _fn(target);
+        t = targets[_i];
+        _fn(t);
       }
-      return process.send(["done", process.pid]);
+      if (target_articles.length === 0) {
+        console.log("NO LINKS?? " + wpid);
+        return process.send(["done", process.pid]);
+      } else {
+        like_string = target_articles.join(" OR ");
+        console.log("SELECT wpid FROM articles WHERE " + like_string);
+        return db.query("SELECT wpid FROM articles WHERE " + like_string + ";", function(err, result) {
+          var inserted, _fn1, _j, _len1, _ref;
+          if (err) {
+            throw err;
+          }
+          console.log("Results: " + result.rows.length);
+          inserted = 0;
+          _ref = result.rows;
+          _fn1 = function(row) {
+            if (row.wpid !== wpid) {
+              inserted++;
+              return db.query({
+                text: "INSERT INTO links (source, target) values($1, $2);",
+                values: [wpid, row.wpid]
+              }, function(err, result) {
+                if (err) {
+                  throw err;
+                }
+                return console.log("Child process " + process.pid + " inserted link: " + wpid + " => " + row.wpid);
+              });
+            }
+          };
+          for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
+            row = _ref[_j];
+            _fn1(row);
+          }
+          if (inserted === 0) {
+            console.log("None inserted out of " + target_articles.length);
+          }
+          return process.send(["done", process.pid]);
+        });
+      }
     });
   };
 
   wrap_up = function() {
+    var _this = this;
     console.log("All done!");
-    return process.exit();
+    return setTimeout(function() {
+      return process.exit();
+    }, 1000);
   };
 
   setup();

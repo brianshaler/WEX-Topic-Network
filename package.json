@@ -25,9 +25,10 @@
     "parse"
   ],
   "dependencies" : {
-    "optimist" : "*",
-    "cluster"  : "*",
-    "pg"       : "0.8.6"
+    "optimist"    : "*",
+    "cluster"     : "*",
+    "pg"          : "0.8.6",
+    "elementtree" : "*"
   },
   "license": "MIT",
   "engine": {
